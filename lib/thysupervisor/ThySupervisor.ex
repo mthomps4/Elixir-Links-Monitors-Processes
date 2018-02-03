@@ -75,7 +75,7 @@ defmodule ThySupervisor do
     end
   end
 
-  def handle_call({:terminate_child, pid} _from, state) do
+  def handle_call({:terminate_child, pid}, _from, state) do
     case terminate_child(pid) do
       :ok -> 
         new_state = state |> HashDict.delete(pid)
@@ -85,7 +85,7 @@ defmodule ThySupervisor do
     end
   end
 
-  def handle_call({:restart_child, old_pid}), _from, state) do
+  def handle_call({:restart_child, old_pid}, _from, state) do
     case HashDict.fetch(state, old_pid) do
       {:ok, child_spec} -> 
         case restart_child(old_pid, child_spec) do
@@ -95,8 +95,8 @@ defmodule ThySupervisor do
                           |> HashDict.put(pid, child_spec)
             {:reply, {:ok, pid}, new_state}
           :error -> {:reply, {:error, "error restarting child"}, state}
-          _catch -> {:reply, :ok, state}
         end
+        _catch -> {:reply, :ok, state}
     end
   end
 
@@ -138,12 +138,9 @@ defmodule ThySupervisor do
   # It attempts to start a new child process using the start_child/1
   # on success the caller receives {:ok, pid}
   # and the state of the supervisor is updated to new_state
-
   # LARGE Assumption 
   # Assumed that process are made via spawn_link 
   # Supervisor OTP Behavior expects processes to be created via spawn_link
-
-
   # links pid to supervisor 
   defp start_child({mod, fun, args}) do
     case apply(mod, fun, args) do
@@ -168,11 +165,6 @@ defmodule ThySupervisor do
   end
 
   defp start_children([]), do: []
-
-  defp terminate_child(pid) do
-    Process.exit(pid, :kill)
-    :ok
-  end
 
   defp terminate_children([]), do: :ok
   defp terminate_children(child_spec_list) do
