@@ -15,6 +15,10 @@ defmodule ThySupervisor do
     GenServer.start_link(__MODULE__, [child_spec_list])
   end
 
+  def start_child(supervisor, child_spec) do 
+    GenServer.call(supervisor, {:start_child, child_spec})
+  end
+
   def terminate_child(supervisor, pid) when is_pid(pid) do
     GenServer.call(supervisor, {:terminate_child, pid})
   end
@@ -25,6 +29,10 @@ defmodule ThySupervisor do
   
   def count_children(supervisor) do
     GenServer.call(supervisor, :count_children)
+  end
+
+  def which_children(supervisor) do
+    GenServer.call(supervisor, :which_children)
   end
   ############# 
   # CALLBACKS #
@@ -43,8 +51,18 @@ defmodule ThySupervisor do
     {:ok, state}
   end
 
+  # Used to shut down the supervisor process 
+  def terminate(_reason, state) do 
+    terminate_child(state) 
+    :ok
+  end
+
   def handle_call(:count_children, _form, state) do
     {:reply, HashDict.size(state), state}
+  end
+
+  def handle_call(:which_children, _from, state) do
+    {:reply, state, state}
   end
 
   def handle_call({:start_child, child_spec}, _from, state) do
@@ -67,14 +85,6 @@ defmodule ThySupervisor do
     end
   end
 
-  # Supervisor set to trap exits 
-  # when forcibly killed the supervisor receives a message {:EXIT, pid, :killed}
-  # handle info set to handle this message 
-  def handle_info({:EXIT, from, :killed}, state) do
-    new_state = state |> HashDict.delete(from)
-    {:noreply, new_state}
-  end
-
   def handle_call({:restart_child, old_pid}), _from, state) do
     case HashDict.fetch(state, old_pid) do
       {:ok, child_spec} -> 
@@ -87,6 +97,36 @@ defmodule ThySupervisor do
           :error -> {:reply, {:error, "error restarting child"}, state}
           _catch -> {:reply, :ok, state}
         end
+    end
+  end
+
+  # Supervisor set to trap exits 
+  # when forcibly killed the supervisor receives a message {:EXIT, pid, :killed}
+  # handle info set to handle this message 
+  def handle_info({:EXIT, from, :killed}, state) do
+    new_state = state |> HashDict.delete(from)
+    {:noreply, new_state}
+  end
+
+  # Doing nothing when a child process exits normally ** finishes 
+  def handle_info({:EXIT, from, :normal}, state) do
+    new_state = state |> HashDict.delete(from)
+    {:noreply, new_state}
+  end
+
+  # Restart child that exits weird... exits reason not above 
+  def handle_info({:EXIT, old_pid, _reason}, state) do
+    case HashDict.fetch(state, old_pid) do
+      {:ok, child_spec} -> 
+        case restart_child(old_pid, child_spec) do
+          {:ok, {pid, child_spec}} -> 
+            new_state = state 
+                          |> HashDict.delete(old_pid) 
+                          |> HashDict.put(pid, child_spec)
+            {:noreply, new_state}
+            :error -> {:noreply, state}
+        end
+      _catch -> {:noreply, state}
     end
   end
   ####
@@ -130,6 +170,15 @@ defmodule ThySupervisor do
   defp start_children([]), do: []
 
   defp terminate_child(pid) do
+    Process.exit(pid, :kill)
+    :ok
+  end
+
+  defp terminate_children([]), do: :ok
+  defp terminate_children(child_spec_list) do
+    child_spec_list |> Enum.each(fn {pid, _child_spec} -> terminate_child(pid) end)
+  end
+  defp terminate_child(pid) when is_pid(pid) do
     Process.exit(pid, :kill)
     :ok
   end
